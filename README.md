@@ -1,7 +1,3 @@
-Absolutely. For your project, I would keep the README **simple, humanized, and resume-friendly**, rather than making it sound AI-generated.
-
-You can copy this directly into `README.md`:
-
 ````markdown
 # 🤖 ChatAI
 
