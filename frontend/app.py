@@ -46,14 +46,17 @@ st.set_page_config(
 
 if "thread_id" not in st.session_state:
 
-    st.session_state.thread_id = (
-        create_thread()
-    )
+    st.session_state.thread_id = create_thread()
 
 
 if "messages" not in st.session_state:
 
     st.session_state.messages = []
+
+
+if "conversations" not in st.session_state:
+
+    st.session_state.conversations = {}
 
 
 # ============================================================
@@ -84,18 +87,88 @@ with st.sidebar:
     # NEW CHAT
     # --------------------------------------------------------
 
-    if st.button(
-        "🆕 New Conversation",
-        use_container_width=True,
+if st.button(
+    "🆕 New Chat",
+    use_container_width=True,
+):
+
+    new_thread_id = create_thread()
+
+    st.session_state.thread_id = new_thread_id
+
+    st.session_state.messages = []
+
+    st.session_state.conversations[
+        new_thread_id
+    ] = {
+        "title": "New Chat"
+    }
+
+    st.rerun()
+
+    # --------------------------------------------------------
+# NEW CHAT
+# --------------------------------------------------------
+
+if st.button(
+    "🆕 New Chat",
+    use_container_width=True,
+):
+
+    new_thread_id = create_thread()
+
+    st.session_state.thread_id = new_thread_id
+
+    st.session_state.messages = []
+
+    st.session_state.conversations[
+        new_thread_id
+    ] = {
+        "title": "New Chat"
+    }
+
+    st.rerun()
+
+
+# --------------------------------------------------------
+# CONVERSATION HISTORY
+# --------------------------------------------------------
+
+st.subheader(
+    "📜 Conversation History"
+)
+
+if not st.session_state.conversations:
+
+    st.caption(
+        "No previous conversations"
+    )
+
+else:
+
+    for thread_id, conversation in (
+        st.session_state.conversations.items()
     ):
 
-        st.session_state.thread_id = (
-            create_thread()
-        )
+        if st.button(
+            conversation["title"],
+            key=f"conversation_{thread_id}",
+            use_container_width=True,
+        ):
 
-        st.session_state.messages = []
+            history = get_history(
+                thread_id
+            )
 
-        st.rerun()
+            st.session_state.thread_id = (
+                thread_id
+            )
+
+            st.session_state.messages = (
+                history
+            )
+
+            st.rerun()
 
 
     # --------------------------------------------------------
@@ -289,6 +362,21 @@ if user_input:
             "content": message_text,
         }
     )
+
+    # --------------------------------------------------------
+    # SAVE CONVERSATION TITLE
+    # --------------------------------------------------------
+
+if (
+    st.session_state.thread_id
+    not in st.session_state.conversations
+):
+
+    st.session_state.conversations[
+        st.session_state.thread_id
+    ] = {
+        "title": message_text[:40]
+    }
 
 
     # ========================================================
