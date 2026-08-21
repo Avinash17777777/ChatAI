@@ -90,6 +90,7 @@ with st.sidebar:
 if st.button(
     "🆕 New Chat",
     use_container_width=True,
+    key="new_chat_button",
 ):
 
     new_thread_id = create_thread()
@@ -105,34 +106,13 @@ if st.button(
     }
 
     st.rerun()
+
+
+
 
     # --------------------------------------------------------
-# NEW CHAT
-# --------------------------------------------------------
-
-if st.button(
-    "🆕 New Chat",
-    use_container_width=True,
-):
-
-    new_thread_id = create_thread()
-
-    st.session_state.thread_id = new_thread_id
-
-    st.session_state.messages = []
-
-    st.session_state.conversations[
-        new_thread_id
-    ] = {
-        "title": "New Chat"
-    }
-
-    st.rerun()
-
-
-# --------------------------------------------------------
-# CONVERSATION HISTORY
-# --------------------------------------------------------
+    # CONVERSATION HISTORY
+    # --------------------------------------------------------
 
 st.subheader(
     "📜 Conversation History"
@@ -178,6 +158,7 @@ else:
     if st.button(
         "🧹 Clear Chat",
         use_container_width=True,
+        key="clear_chat_button",
     ):
 
         st.session_state.thread_id = (
@@ -242,6 +223,7 @@ else:
     if st.button(
         "🔄 Re-index Documents",
         use_container_width=True,
+        key="reindex_button",
     ):
 
         with st.spinner(
