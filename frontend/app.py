@@ -15,7 +15,7 @@ from backend.chatbot import (
     get_history,
     rebuild_knowledge_base,
 )
- 
+
 # ============================================================
 # PAGE CONFIGURATION
 # ============================================================
