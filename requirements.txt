@@ -1,41 +1,16 @@
-```text
-# =========================
-# Frontend
-# =========================
 streamlit
-
-# =========================
-# Environment / HTTP
-# =========================
 python-dotenv
 requests
-
-# =========================
-# LangChain
-# =========================
 langchain
 langchain-core
 langchain-community
 langchain-text-splitters
 langchain-groq
 langchain-huggingface
-
-# =========================
-# LangGraph
-# =========================
 langgraph
 langgraph-checkpoint
 langgraph-checkpoint-sqlite
-
-# =========================
-# RAG / PDF / Vector Store
-# =========================
 faiss-cpu
 pypdf
 sentence-transformers
-
-# =========================
-# Web Search
-# =========================
 ddgs
-```
