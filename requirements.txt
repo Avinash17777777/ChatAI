@@ -14,3 +14,4 @@ faiss-cpu
 pypdf
 sentence-transformers
 ddgs
+langsmith
