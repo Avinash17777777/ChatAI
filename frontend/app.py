@@ -1,377 +1,197 @@
 import sys
-import hashlib
+import uuid
 from pathlib import Path
 
 import streamlit as st
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 
-# ============================================================
-# PROJECT PATH
-# ============================================================
+# =========================== PROJECT PATH ===========================
 
-ROOT_DIR = (Path(__file__).resolve().parent.parent)
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
-sys.path.insert(0,str(ROOT_DIR),)
+sys.path.insert(0, str(ROOT_DIR))
 
 
-# ============================================================
-# BACKEND IMPORT
-# ============================================================
+# =========================== BACKEND IMPORT ===========================
 
 from backend.chatbot import (
-    chat,
-    create_thread,
-    get_history,
-    rebuild_knowledge_base,
-    chunk_count,
-    indexed_files,
+    chatbot,
+    ingest_pdf,
+    retrieve_all_threads,
+    thread_document_metadata,
 )
 
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
-
-st.set_page_config(
-    page_title="ChatAI",
-    page_icon="🤖",
-    layout="centered",
-)
+# =========================== Utilities ===========================
+def generate_thread_id():
+    return str(uuid.uuid4())
 
 
-# ============================================================
-# SESSION STATE
-# ============================================================
+def reset_chat():
+    thread_id = generate_thread_id()
+    st.session_state["thread_id"] = thread_id
+    st.session_state["message_history"] = []
+
+
+def add_thread(thread_id):
+    if thread_id not in st.session_state["chat_threads"]:
+        st.session_state["chat_threads"].append(thread_id)
+
+
+def load_conversation(thread_id):
+    state = chatbot.get_state(config={"configurable": {"thread_id": thread_id}})
+    return state.values.get("messages", [])
+
+
+# ======================= Session Initialization ===================
+if "message_history" not in st.session_state:
+    st.session_state["message_history"] = []
 
 if "thread_id" not in st.session_state:
+    st.session_state["thread_id"] = generate_thread_id()
 
-    st.session_state.thread_id = (
-        create_thread()
+if "chat_threads" not in st.session_state:
+    st.session_state["chat_threads"] = retrieve_all_threads()
+
+if "ingested_docs" not in st.session_state:
+    st.session_state["ingested_docs"] = {}
+
+
+thread_key = str(st.session_state["thread_id"])
+thread_docs = st.session_state["ingested_docs"].setdefault(thread_key, {})
+threads = st.session_state["chat_threads"][::-1]
+selected_thread = None
+
+# ============================ Sidebar ============================
+st.sidebar.title("LangGraph PDF Chatbot")
+st.sidebar.markdown(f"**Thread ID:** `{thread_key}`")
+
+if st.sidebar.button("New Chat", use_container_width=True):
+    reset_chat()
+    st.rerun()
+
+if thread_docs:
+    latest_doc = list(thread_docs.values())[-1]
+    st.sidebar.success(
+        f"Using `{latest_doc.get('filename')}` "
+        f"({latest_doc.get('chunks')} chunks from {latest_doc.get('documents')} pages)"
     )
+else:
+    st.sidebar.info("No PDF indexed yet.")
 
-
-if "messages" not in st.session_state:
-
-    st.session_state.messages = []
-
-
-if "uploaded_file_hash" not in st.session_state:
-
-    st.session_state.uploaded_file_hash = None
-
-
-# ============================================================
-# HEADER
-# ============================================================
-
-st.title("ChatAI")
-
-st.caption("Ask questions. Get answers.")
-
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-
-with st.sidebar:
-
-    st.header("Chat Controls")
-
-    # --------------------------------------------------------
-    # NEW CONVERSATION
-    # --------------------------------------------------------
-
-    if st.button("New Conversation",use_container_width=True,):
-        st.session_state.thread_id = (create_thread())
-        st.session_state.messages = []
-        st.rerun()
-
-
-    # --------------------------------------------------------
-    # CLEAR CHAT
-    # --------------------------------------------------------
-
-    if st.button("Clear Chat",use_container_width=True,):
-        st.session_state.thread_id = (create_thread())
-        st.session_state.messages = []
-        st.rerun()
-
-    st.divider()
-
-
-    # ========================================================
-    # KNOWLEDGE BASE
-    # ========================================================
-
-    st.header("Knowledge Base")
-
-
-    # --------------------------------------------------------
-    # CURRENT INDEX STATUS
-    # --------------------------------------------------------
-
-    current_chunks = chunk_count()
-    current_files = indexed_files()
-
-    if current_files:
-
-        st.success(
-            f"{len(current_files)} "
-            f"document(s) indexed"
-        )
-
-        st.caption(f"Chunks: {current_chunks}")
-
-        for filename in sorted(current_files):
-            st.write(f"• {filename}")
+uploaded_pdf = st.sidebar.file_uploader("Upload a PDF for this chat", type=["pdf"])
+if uploaded_pdf:
+    if uploaded_pdf.name in thread_docs:
+        st.sidebar.info(f"`{uploaded_pdf.name}` already processed for this chat.")
     else:
-        st.info("No documents indexed.")
-
-
-    # --------------------------------------------------------
-    # FILE UPLOADER
-    # --------------------------------------------------------
-
-    uploaded_file = st.file_uploader(
-        "Upload a document",
-        type=["pdf","txt","md","pptx",],)
-
-    if uploaded_file:
-        documents_dir = (ROOT_DIR / "documents")
-        documents_dir.mkdir(parents=True,exist_ok=True,)
-        file_path = (documents_dir / uploaded_file.name)
-
-        # ----------------------------------------------------
-        # Read uploaded file
-        # ----------------------------------------------------
-
-        file_bytes = (uploaded_file.getvalue())
-
-        # ----------------------------------------------------
-        # Stable hash
-        # ----------------------------------------------------
-
-        file_hash = hashlib.sha256(file_bytes).hexdigest()
-
-        # ----------------------------------------------------
-        # Only index when the file is new/changed.
-        # ----------------------------------------------------
-
-        if (st.session_state.uploaded_file_hash != file_hash):
-            try:
-                file_path.write_bytes(file_bytes)
-                with st.spinner("Indexing document..."):
-                    count = (rebuild_knowledge_base())
-
-                st.session_state.uploaded_file_hash = (file_hash)
-                st.success(f"{uploaded_file.name} "f"indexed successfully.")
-                st.info(f"{count} chunks indexed.")
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"Failed to index document:\n{e}")
-
-
-    # --------------------------------------------------------
-    # REINDEX BUTTON
-    # --------------------------------------------------------
-
-    if st.button(
-        "🔄 Re-index Documents",
-        use_container_width=True,
-    ):
-
-        try:
-
-            with st.spinner(
-                "Rebuilding knowledge base..."
-            ):
-
-                count = (
-                    rebuild_knowledge_base()
-                )
-
-            st.session_state.uploaded_file_hash = None
-
-            st.success(
-                f"Knowledge base rebuilt. "
-                f"{count} chunks indexed."
+        with st.sidebar.status("Indexing PDF…", expanded=True) as status_box:
+            summary = ingest_pdf(
+                uploaded_pdf.getvalue(),
+                thread_id=thread_key,
+                filename=uploaded_pdf.name,
             )
+            thread_docs[uploaded_pdf.name] = summary
+            status_box.update(label="✅ PDF indexed", state="complete", expanded=False)
 
-            st.rerun()
+st.sidebar.subheader("Past conversations")
+if not threads:
+    st.sidebar.write("No past conversations yet.")
+else:
+    for thread_id in threads:
+        if st.sidebar.button(str(thread_id), key=f"side-thread-{thread_id}"):
+            selected_thread = thread_id
 
-        except Exception as e:
-            st.error(f"Re-indexing failed:\n{e}")
+# ============================ Main Layout ========================
+st.title("Multi Utility Chatbot")
 
-    st.divider()
-
-
-    # ========================================================
-    # COMMANDS
-    # ========================================================
-
-    st.header("⌨Commands")
-
-    st.markdown(
-        """
-`help` → Show commands
-
-`history` → Show conversation history
-
-`clear` → Start a new conversation
-
-`exit` → End the conversation
-"""
-    )
-
-
-# ============================================================
-# CHAT HISTORY
-# ============================================================
-
-for message in st.session_state.messages:
-
+# Chat area
+for message in st.session_state["message_history"]:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-
-# ============================================================
-# CHAT INPUT
-# ============================================================
-
-user_input = st.chat_input("Ask something...")
-
+user_input = st.chat_input("Ask about your document or use tools")
 
 if user_input:
-    message_text = (user_input.strip())
-    if not message_text:
-        st.stop()
+    add_thread(thread_key)
+    st.session_state["message_history"].append({"role": "user", "content": user_input})
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
+    CONFIG = {
+        "configurable": {"thread_id": thread_key},
+        "metadata": {"thread_id": thread_key},
+        "run_name": "chat_turn",
+    }
 
-    # ========================================================
-    # NORMALIZE COMMAND
-    # ========================================================
+    with st.chat_message("assistant"):
+        status_holder = {"box": None}
 
-    command = (" ".join(message_text.lower().split()))
+        def ai_only_stream():
+            for message_chunk, _ in chatbot.stream(
+                {"messages": [HumanMessage(content=user_input)]},
+                config=CONFIG,
+                stream_mode="messages",
+            ):
+                if isinstance(message_chunk, ToolMessage):
+                    tool_name = getattr(message_chunk, "name", "tool")
+                    if status_holder["box"] is None:
+                        status_holder["box"] = st.status(
+                            f"🔧 Using `{tool_name}` …", expanded=True
+                        )
+                    else:
+                        status_holder["box"].update(
+                            label=f"🔧 Using `{tool_name}` …",
+                            state="running",
+                            expanded=True,
+                        )
 
-    # ========================================================
-    # DISPLAY USER MESSAGE
-    # ========================================================
+                if isinstance(message_chunk, AIMessage):
+                    yield message_chunk.content
 
-    st.session_state.messages.append({
-            "role": "user",
-            "content": message_text,
-        })
+        ai_message = st.write_stream(ai_only_stream())
 
+        if status_holder["box"] is not None:
+            status_holder["box"].update(
+                label="✅ Tool finished", state="complete", expanded=False
+            )
 
-    # ========================================================
-    # EXIT
-    # ========================================================
+    st.session_state["message_history"].append(
+        {"role": "assistant", "content": ai_message}
+    )
 
-    if command in {
-        "exit",
-        "quit",
-        "bye",
-        "goodbye",
-        "close",
-        "end",
-        "stop",
-        "see you",
-        "see ya",
-        "talk to you later",
-    }:
+    doc_meta = thread_document_metadata(thread_key)
+    if doc_meta:
+        st.caption(
+            f"Document indexed: {doc_meta.get('filename')} "
+            f"(chunks: {doc_meta.get('chunks')}, pages: {doc_meta.get('documents')})"
+        )
 
-        answer = ("Goodbye! 👋")
+st.divider()
 
+if selected_thread:
+    st.session_state["thread_id"] = selected_thread
+    messages = load_conversation(selected_thread)
 
-    # ========================================================
-    # HELP
-    # ========================================================
-
-    elif command in {"help","/help","?",}:
-
-        answer = """
-### Available Commands
-
-- `help` — Show commands
-- `history` — Show conversation history
-- `clear` — Start a new conversation
-- `exit` — End the conversation
-
-You can also ask questions about your uploaded documents.
-"""
-
-
-    # ========================================================
-    # CLEAR
-    # ========================================================
-
-    elif command in {
-        "clear",
-        "/clear",
-        "reset",
-        "/reset",
-        "start over",
-        "new chat",
-    }:
-
-        st.session_state.thread_id = (create_thread())
-        st.session_state.messages = []
-        st.rerun()
-
-
-    # ========================================================
-    # HISTORY
-    # ========================================================
-
-    elif command in {
-        "history",
-        "/history",
-        "show history",
-        "conversation history",
-    }:
-
-        history = get_history(st.session_state.thread_id)
-
-        if not history:
-            answer = ("No conversation history yet.")
-        else:
-            history_parts = []
-            for item in history:
-                role = (
-                    "You"
-                    if item["role"] == "user"
-                    else "AI"
-                )
-
-                history_parts.append(
-                    f"**{role}:** "
-                    f"{item['content']}"
-                )
-
-            answer = ("\n\n".join(history_parts))
-
-
-    # ========================================================
-    # NORMAL CHAT / RAG
-    # ========================================================
-
+    temp_messages = []
+    for msg in messages:
+        if isinstance(msg, HumanMessage):
+            temp_messages.append({
+                "role": "user",
+                "content": msg.content,
+            })
+            
+        elif isinstance(msg, AIMessage):
+            if msg.content:
+                temp_messages.append({
+                    "role": "assistant",
+                    "content": msg.content,
+                })
+    st.session_state["message_history"] = temp_messages
+    
+    document_metadata = thread_document_metadata(str(selected_thread))
+    if document_metadata:
+        st.session_state["ingested_docs"][str(selected_thread)] = {document_metadata["filename"]: document_metadata}
     else:
-
-        with st.spinner("Thinking..."):
-            try:
-                answer = chat(st.session_state.thread_id,message_text,)
-            except Exception as e:
-                answer = (
-                    "An error occurred while "
-                    "processing your question.\n\n"
-                    f"```text\n{e}\n```"
-                )
-
-
-    # ========================================================
-    # DISPLAY AI RESPONSE
-    # ========================================================
-
-    st.session_state.messages.append({"role": "assistant", "content": answer,})
-    st.rerun()
+        st.session_state["ingested_docs"].setdefault(str(selected_thread),{})
+        st.rerun()
